@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 
 type Task = {
   id: string;
@@ -20,14 +21,14 @@ type Task = {
 const INITIAL_TASKS: Task[] = [
   { id: '1', title: 'Learn React Native Primitives', completed: true },
   { id: '2', title: 'Master Flexbox Layout', completed: true },
-  { id: '3', title: 'Understand FlatList Virtualization', completed: false },
+  { id: '3', title: 'Multi-Screen React Navigation', completed: false },
 ];
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
-  // 1. CREATE: Add new task
   const handleAddTask = () => {
     if (newTaskTitle.trim() === '') return;
 
@@ -42,7 +43,6 @@ export default function HomeScreen() {
     Keyboard.dismiss();
   };
 
-  // 2. UPDATE: Toggle task completion status
   const handleToggleTask = (id: string) => {
     setTasks(
       tasks.map((task) =>
@@ -51,17 +51,27 @@ export default function HomeScreen() {
     );
   };
 
-  // 3. DELETE: Remove task by ID
   const handleDeleteTask = (id: string) => {
     setTasks(tasks.filter((task) => task.id !== id));
   };
 
-  // Render individual task item
+  // Navigates to the details screen with route params
+  const handleOpenDetails = (task: Task) => {
+    router.push({
+      pathname: '/details',
+      params: {
+        id: task.id,
+        title: task.title,
+        completed: String(task.completed),
+      },
+    });
+  };
+
   const renderTaskItem = ({ item }: { item: Task }) => (
     <View style={styles.taskCard}>
-      {/* Tappable task area for toggling completion */}
+      {/* Tap the circle to toggle completion */}
       <Pressable
-        style={styles.taskTouchArea}
+        style={styles.checkArea}
         onPress={() => handleToggleTask(item.id)}
       >
         <View
@@ -70,19 +80,22 @@ export default function HomeScreen() {
             item.completed ? styles.dotCompleted : styles.dotPending,
           ]}
         />
-        <View style={styles.taskContent}>
-          <Text
-            style={[
-              styles.taskTitle,
-              item.completed && styles.taskTitleCompleted,
-            ]}
-          >
-            {item.title}
-          </Text>
-          <Text style={styles.taskStatus}>
-            {item.completed ? 'Completed' : 'Tap to mark done'}
-          </Text>
-        </View>
+      </Pressable>
+
+      {/* Tap the title to navigate to details */}
+      <Pressable
+        style={styles.taskContent}
+        onPress={() => handleOpenDetails(item)}
+      >
+        <Text
+          style={[
+            styles.taskTitle,
+            item.completed && styles.taskTitleCompleted,
+          ]}
+        >
+          {item.title}
+        </Text>
+        <Text style={styles.taskSubtext}>Tap to view details →</Text>
       </Pressable>
 
       {/* Delete button */}
@@ -104,9 +117,6 @@ export default function HomeScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.container}>
-        <Text style={styles.headerTitle}>Task Master</Text>
-        <Text style={styles.headerSubtitle}>Phase 2 Milestone: Local State CRUD</Text>
-
         {/* Input & Add Button */}
         <View style={styles.inputRow}>
           <TextInput
@@ -129,7 +139,7 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {/* Task List with Empty State */}
+        {/* Task List */}
         <FlatList
           data={tasks}
           keyExtractor={(item) => item.id}
@@ -155,18 +165,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingHorizontal: 20,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#38bdf8',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#94a3b8',
-    marginBottom: 20,
   },
   inputRow: {
     flexDirection: 'row',
@@ -206,25 +206,21 @@ const styles = StyleSheet.create({
   taskCard: {
     backgroundColor: '#1e293b',
     borderRadius: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: '#334155',
   },
-  taskTouchArea: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+  checkArea: {
+    paddingRight: 12,
   },
   statusDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginRight: 14,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
   },
   dotCompleted: {
     backgroundColor: '#22c55e',
@@ -244,9 +240,9 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
     color: '#64748b',
   },
-  taskStatus: {
+  taskSubtext: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#64748b',
     marginTop: 2,
   },
   deleteButton: {
@@ -258,7 +254,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#334155',
   },
   deleteButtonText: {
-    color: '#ef4444', // Red ✕
+    color: '#ef4444',
     fontSize: 16,
     fontWeight: 'bold',
   },
