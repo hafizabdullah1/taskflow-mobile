@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -11,6 +12,9 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { auth } from '../services/firebaseConfig';
+import AuthScreen from '../components/AuthScreen';
 
 type Task = {
   id: string;
@@ -21,14 +25,40 @@ type Task = {
 const INITIAL_TASKS: Task[] = [
   { id: '1', title: 'Learn React Native Primitives', completed: true },
   { id: '2', title: 'Master Flexbox Layout', completed: true },
-  { id: '3', title: 'Multi-Screen React Navigation', completed: false },
+  { id: '3', title: 'Connect Firebase Auth', completed: false },
 ];
 
 export default function HomeScreen() {
   const router = useRouter();
+
+  // Authentication State
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Task State
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
+  // 1. Listen for Firebase Auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+
+    return unsubscribe; // Unsubscribe listener on unmount
+  }, []);
+
+  // 2. Handle User Sign Out
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
+  // Task CRUD handlers
   const handleAddTask = () => {
     if (newTaskTitle.trim() === '') return;
 
@@ -55,7 +85,6 @@ export default function HomeScreen() {
     setTasks(tasks.filter((task) => task.id !== id));
   };
 
-  // Navigates to the details screen with route params
   const handleOpenDetails = (task: Task) => {
     router.push({
       pathname: '/details',
@@ -67,9 +96,24 @@ export default function HomeScreen() {
     });
   };
 
+  // 3. Render Loading State
+  if (authLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#38bdf8" />
+        <Text style={styles.loadingText}>Connecting to Firebase...</Text>
+      </View>
+    );
+  }
+
+  // 4. Render Auth Screen if not logged in
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  // 5. Render Main Task Manager if logged in
   const renderTaskItem = ({ item }: { item: Task }) => (
     <View style={styles.taskCard}>
-      {/* Tap the circle to toggle completion */}
       <Pressable
         style={styles.checkArea}
         onPress={() => handleToggleTask(item.id)}
@@ -82,7 +126,6 @@ export default function HomeScreen() {
         />
       </Pressable>
 
-      {/* Tap the title to navigate to details */}
       <Pressable
         style={styles.taskContent}
         onPress={() => handleOpenDetails(item)}
@@ -95,10 +138,9 @@ export default function HomeScreen() {
         >
           {item.title}
         </Text>
-        <Text style={styles.taskSubtext}>Tap to view details →</Text>
+        <Text style={styles.taskSubtext}>Tap for details →</Text>
       </Pressable>
 
-      {/* Delete button */}
       <Pressable
         style={({ pressed }) => [
           styles.deleteButton,
@@ -117,6 +159,25 @@ export default function HomeScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.container}>
+        {/* User Profile Bar */}
+        <View style={styles.userBar}>
+          <View style={styles.userInfo}>
+            <Text style={styles.userGreeting}>Signed in as:</Text>
+            <Text style={styles.userEmail} numberOfLines={1}>
+              {user.email}
+            </Text>
+          </View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.signOutButton,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={handleSignOut}
+          >
+            <Text style={styles.signOutButtonText}>Sign Out</Text>
+          </Pressable>
+        </View>
+
         {/* Input & Add Button */}
         <View style={styles.inputRow}>
           <TextInput
@@ -162,11 +223,59 @@ const styles = StyleSheet.create({
   keyboardContainer: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#94a3b8',
+    marginTop: 12,
+    fontSize: 14,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
     paddingTop: 16,
     paddingHorizontal: 20,
+  },
+  userBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  userInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  userGreeting: {
+    fontSize: 11,
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  userEmail: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#38bdf8',
+  },
+  signOutButton: {
+    backgroundColor: '#334155',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  signOutButtonText: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '600',
   },
   inputRow: {
     flexDirection: 'row',
