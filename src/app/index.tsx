@@ -13,7 +13,18 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { auth } from '../services/firebaseConfig';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
+import { auth, db } from '../services/firebaseConfig';
 import AuthScreen from '../components/AuthScreen';
 
 type Task = {
@@ -22,12 +33,6 @@ type Task = {
   completed: boolean;
 };
 
-const INITIAL_TASKS: Task[] = [
-  { id: '1', title: 'Learn React Native Primitives', completed: true },
-  { id: '2', title: 'Master Flexbox Layout', completed: true },
-  { id: '3', title: 'Connect Firebase Auth', completed: false },
-];
-
 export default function HomeScreen() {
   const router = useRouter();
 
@@ -35,21 +40,62 @@ export default function HomeScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // Task State
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
+  // Cloud Tasks State
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
-  // 1. Listen for Firebase Auth state changes
+  // 1. Listen for Authentication state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
     });
 
-    return unsubscribe; // Unsubscribe listener on unmount
+    return unsubscribe;
   }, []);
 
-  // 2. Handle User Sign Out
+  // 2. Real-Time Cloud Firestore Sync for the logged-in user
+  useEffect(() => {
+    if (!user) {
+      setTasks([]);
+      return;
+    }
+
+    setTasksLoading(true);
+
+    // Query only tasks created by this specific user
+    const tasksQuery = query(
+      collection(db, 'tasks'),
+      where('userId', '==', user.uid)
+    );
+
+    // onSnapshot listens to live cloud updates
+    const unsubscribe = onSnapshot(
+      tasksQuery,
+      (snapshot) => {
+        const loadedTasks: Task[] = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            title: data.title || '',
+            completed: data.completed || false,
+          };
+        });
+
+        setTasks(loadedTasks);
+        setTasksLoading(false);
+      },
+      (error) => {
+        console.error('Firestore listener error:', error);
+        setTasksLoading(false);
+      }
+    );
+
+    return unsubscribe; // Disconnect cloud listener when user logs out or unmounts
+  }, [user]);
+
+  // Handle Logout
   const handleSignOut = async () => {
     try {
       await signOut(auth);
@@ -58,33 +104,49 @@ export default function HomeScreen() {
     }
   };
 
-  // Task CRUD handlers
-  const handleAddTask = () => {
-    if (newTaskTitle.trim() === '') return;
+  // 3. CREATE: Add new task to Cloud Firestore
+  const handleAddTask = async () => {
+    if (newTaskTitle.trim() === '' || !user) return;
 
-    const newTask: Task = {
-      id: Date.now().toString(),
-      title: newTaskTitle.trim(),
-      completed: false,
-    };
-
-    setTasks([newTask, ...tasks]);
+    const titleToAdd = newTaskTitle.trim();
     setNewTaskTitle('');
     Keyboard.dismiss();
+
+    try {
+      await addDoc(collection(db, 'tasks'), {
+        title: titleToAdd,
+        completed: false,
+        userId: user.uid,
+        createdAt: serverTimestamp(), // Cloud timestamp
+      });
+    } catch (error) {
+      console.error('Error adding task to Firestore:', error);
+    }
   };
 
-  const handleToggleTask = (id: string) => {
-    setTasks(
-      tasks.map((task) =>
-        task.id === id ? { ...task, completed: !task.completed } : task
-      )
-    );
+  // 4. UPDATE: Toggle task completion in Cloud Firestore
+  const handleToggleTask = async (id: string, currentCompleted: boolean) => {
+    try {
+      const taskRef = doc(db, 'tasks', id);
+      await updateDoc(taskRef, {
+        completed: !currentCompleted,
+      });
+    } catch (error) {
+      console.error('Error updating task in Firestore:', error);
+    }
   };
 
-  const handleDeleteTask = (id: string) => {
-    setTasks(tasks.filter((task) => task.id !== id));
+  // 5. DELETE: Delete task from Cloud Firestore
+  const handleDeleteTask = async (id: string) => {
+    try {
+      const taskRef = doc(db, 'tasks', id);
+      await deleteDoc(taskRef);
+    } catch (error) {
+      console.error('Error deleting task from Firestore:', error);
+    }
   };
 
+  // Open Details screen
   const handleOpenDetails = (task: Task) => {
     router.push({
       pathname: '/details',
@@ -96,7 +158,7 @@ export default function HomeScreen() {
     });
   };
 
-  // 3. Render Loading State
+  // Render Loading Screen
   if (authLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -106,17 +168,17 @@ export default function HomeScreen() {
     );
   }
 
-  // 4. Render Auth Screen if not logged in
+  // Render Auth Screen if not logged in
   if (!user) {
     return <AuthScreen />;
   }
 
-  // 5. Render Main Task Manager if logged in
+  // Render Task Item
   const renderTaskItem = ({ item }: { item: Task }) => (
     <View style={styles.taskCard}>
       <Pressable
         style={styles.checkArea}
-        onPress={() => handleToggleTask(item.id)}
+        onPress={() => handleToggleTask(item.id, item.completed)}
       >
         <View
           style={[
@@ -162,7 +224,7 @@ export default function HomeScreen() {
         {/* User Profile Bar */}
         <View style={styles.userBar}>
           <View style={styles.userInfo}>
-            <Text style={styles.userGreeting}>Signed in as:</Text>
+            <Text style={styles.userGreeting}>Cloud Synced As:</Text>
             <Text style={styles.userEmail} numberOfLines={1}>
               {user.email}
             </Text>
@@ -182,7 +244,7 @@ export default function HomeScreen() {
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
-            placeholder="Add a new task..."
+            placeholder="Add cloud task..."
             placeholderTextColor="#64748b"
             value={newTaskTitle}
             onChangeText={setNewTaskTitle}
@@ -200,20 +262,29 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {/* Task List */}
-        <FlatList
-          data={tasks}
-          keyExtractor={(item) => item.id}
-          renderItem={renderTaskItem}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>🎉 No tasks left!</Text>
-              <Text style={styles.emptySubtext}>Add a task above to get started.</Text>
-            </View>
-          }
-        />
+        {/* Task List / Loading Indicator */}
+        {tasksLoading && tasks.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <ActivityIndicator size="small" color="#38bdf8" />
+            <Text style={styles.loadingText}>Fetching cloud tasks...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={tasks}
+            keyExtractor={(item) => item.id}
+            renderItem={renderTaskItem}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>☁️ No cloud tasks yet!</Text>
+                <Text style={styles.emptySubtext}>
+                  Add your first task above to save it to Firestore.
+                </Text>
+              </View>
+            }
+          />
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -231,7 +302,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: '#94a3b8',
-    marginTop: 12,
+    marginTop: 10,
     fontSize: 14,
   },
   container: {

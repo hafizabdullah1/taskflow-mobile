@@ -3,6 +3,9 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Import Firestore
+import { getFirestore } from 'firebase/firestore';
+
 // Your web app's Firebase configuration from Firebase Console
 const firebaseConfig = {
   apiKey: "AIzaSyD9pO__kW5-DkEAATI4MeeEeS0NIMKFngI",
@@ -22,4 +25,7 @@ const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(AsyncStorage),
 });
 
-export { app, auth };
+// Initialize Cloude Firestore
+const db = getFirestore(app);
+
+export { app, auth, db };
