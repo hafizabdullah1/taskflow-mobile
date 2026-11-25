@@ -10,7 +10,8 @@ A comprehensive, phase-by-phase reference guide designed for fast revision, conc
 3. [Phase 3: Multi-Screen Navigation (Expo Router)](#phase-3-multi-screen-navigation-expo-router)
 4. [Phase 4: Firebase Authentication & Persistent Sessions](#phase-4-firebase-authentication--persistent-sessions)
 5. [Phase 5: Cloud Firestore Real-Time CRUD & Data Isolation](#phase-5-cloud-firestore-real-time-crud--data-isolation)
-6. [Top Technical Interview Q&A Cheatsheet](#top-technical-interview-qa-cheatsheet)
+6. [Phase 6: Production Architecture & Senior Refactoring Patterns](#phase-6-production-architecture--senior-refactoring-patterns)
+7. [Top Technical Interview Q&A Cheatsheet](#top-technical-interview-qa-cheatsheet)
 
 ---
 
@@ -206,6 +207,34 @@ React uses reference equality to detect changes. **Never mutate state directly**
 
 > **💡 How to explain Phase 5:**  
 > *"Cloud Firestore is a NoSQL document database. Using modular methods (`addDoc`, `updateDoc`, `deleteDoc`), we write data tagged with the user's `uid`. We use `onSnapshot` with a scoped `where('userId', '==', user.uid)` query to establish real-time sync, which updates local React state automatically without manual re-fetching."*
+
+---
+
+## Phase 6: Production Architecture & Senior Refactoring Patterns
+
+### 1. Eliminating the "God Component" (Service Layer & Custom Hooks)
+* **The Problem:** Placing Firebase queries (`addDoc`, `updateDoc`, `onSnapshot`), authentication state, form handling, and list rendering inside a single screen file (`index.tsx`) creates tightly coupled, untestable spaghetti code.
+* **The Solution (3-Tier Clean Architecture):**
+  1. **Service Layer (`taskService.ts`):** Pure, framework-agnostic JavaScript functions communicating directly with Firebase SDK.
+  2. **Custom Hook Layer (`useTasks.ts`, `useAuth.ts`):** Manages component lifecycle, state, and real-time listeners.
+  3. **UI Component Layer (`TaskHeader`, `TaskInput`, `TaskItem`, `index.tsx`):** Pure presentation components that receive props and trigger callback actions.
+
+### 2. Client-Side Filtering vs. Server-Side Security Rules
+* **Client-side query `where('userId', '==', user.uid)` is NOT security:** Because Firebase client keys are public, any attacker can execute custom scripts without that `where()` clause and download other users' data.
+* **`firestore.rules` is the database firewall:** Server-side rules enforce that any read, create, update, or delete request must strictly match `request.auth.uid == resource.data.userId`.
+
+### 3. Firestore Composite Indexes (The `where` + `orderBy` Requirement)
+* Single-field queries are indexed automatically by Firestore.
+* When you combine a **`where()`** equality filter on one field (e.g. `userId`) with an **`orderBy()`** sorting clause on another field (e.g. `createdAt`), Firestore requires a **Composite Index**.
+* Without a composite index, Firestore blocks the query to prevent full collection table scans.
+
+### 4. Preventing Stale Data in Mobile Navigation
+* **The Anti-Pattern:** Passing full data objects (`params: { id, title, completed }`) via navigation parameters freezes a static snapshot. If the task is modified in the cloud, the Details screen displays stale data.
+* **The Senior Pattern:** Pass **only the ID** (`params: { id }`). The destination screen subscribes directly to the live document via `subscribeToTaskById(id)`.
+
+### 5. List Performance Optimization (`React.memo`)
+* In `<FlatList>`, whenever any parent state changes, every list item tends to re-render by default.
+* Wrapping `<TaskItem>` in **`React.memo`** ensures an item only re-renders if its specific props (`task.completed`, `task.title`) actually change, maintaining buttery-smooth 60fps scrolling.
 
 ---
 
